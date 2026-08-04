@@ -10,9 +10,10 @@ interface Point {
 interface ZoneCanvasProps {
   onZoneSaved?: () => void;
   onCameraSwitch?: () => void;
+  cameraIndex?: number;
 }
 
-export default function ZoneCanvas({ onZoneSaved, onCameraSwitch }: ZoneCanvasProps) {
+export default function ZoneCanvas({ onZoneSaved, onCameraSwitch, cameraIndex = 0 }: ZoneCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [points, setPoints] = useState<Point[]>([]);
@@ -30,7 +31,7 @@ export default function ZoneCanvas({ onZoneSaved, onCameraSwitch }: ZoneCanvasPr
     setCapturing(true);
     setCaptureError('');
     try {
-      const res = await fetch(`/api/v1/snapshot?t=${Date.now()}`);
+      const res = await fetch(`/api/v1/snapshot/${cameraIndex}?t=${Date.now()}`);
       if (!res.ok) throw new Error('No frame available');
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
@@ -49,7 +50,7 @@ export default function ZoneCanvas({ onZoneSaved, onCameraSwitch }: ZoneCanvasPr
       setCaptureError('Could not capture frame — camera may still be initialising.');
       setCapturing(false);
     }
-  }, []);
+  }, [cameraIndex]);
 
   const resetToLiveFeed = useCallback(() => {
     setUseSnapshot(false);
@@ -220,7 +221,7 @@ export default function ZoneCanvas({ onZoneSaved, onCameraSwitch }: ZoneCanvasPr
         <div className="feed-container rounded-xl overflow-hidden border border-slate-700/50">
           <img
             id="zone-feed-img"
-            src="/api/v1/video_feed"
+            src={`/api/v1/video_feed/${cameraIndex}`}
             alt="Live feed"
             className="w-full h-auto block"
             crossOrigin="anonymous"

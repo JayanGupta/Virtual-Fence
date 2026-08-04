@@ -16,7 +16,8 @@ export default function ZoneCalibrationPage() {
   const [zones, setZones] = useState<Zone[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState<string | null>(null);
-
+  const [cameras, setCameras] = useState<{ index: number; name: string; label: string }[]>([]);
+  const [selectedCamera, setSelectedCamera] = useState<number>(0);
 
   const fetchZones = () => {
     fetch('/api/v1/zones')
@@ -30,6 +31,15 @@ export default function ZoneCalibrationPage() {
 
   useEffect(() => {
     fetchZones();
+    fetch('/api/v1/cameras')
+      .then((r) => r.json())
+      .then((data) => {
+        setCameras(data);
+        if (data.length > 0) {
+          setSelectedCamera(data[0].index);
+        }
+      })
+      .catch(() => {});
   }, []);
 
   const deleteZone = async (id: string) => {
@@ -103,12 +113,31 @@ export default function ZoneCalibrationPage() {
                 </svg>
                 <h2 className="text-sm font-semibold text-slate-200">Draw Zone</h2>
               </div>
+              
+              {cameras.length > 0 && (
+                <div className="flex items-center gap-2 bg-slate-900/50 rounded-lg px-2 py-1 border border-slate-700/50">
+                  <span className="text-xs text-slate-400">Camera:</span>
+                  <select
+                    value={selectedCamera}
+                    onChange={(e) => setSelectedCamera(Number(e.target.value))}
+                    className="bg-transparent text-sm text-slate-200 focus:outline-none focus:ring-0 border-none cursor-pointer p-0"
+                    id="camera-selector"
+                  >
+                    {cameras.map((c) => (
+                      <option key={c.index} value={c.index} className="bg-slate-800">
+                        {c.label} - {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
             </div>
 
             <div className="rounded-lg bg-slate-950/50 p-1">
               <ZoneCanvas
                 onZoneSaved={fetchZones}
+                cameraIndex={selectedCamera}
               />
             </div>
 

@@ -353,6 +353,27 @@ def video_feed_default():
     )
 
 # ---------------------------------------------------------------------------
+# Snapshots
+# ---------------------------------------------------------------------------
+@app.get("/api/v1/snapshot/{camera_index}")
+def get_snapshot(camera_index: int):
+    engine_instance = _engines.get(camera_index)
+    if not engine_instance or not engine_instance.latest_jpeg:
+        raise HTTPException(503, "No frame available yet — camera may still be initialising.")
+    return Response(
+        content=engine_instance.latest_jpeg,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+    )
+
+@app.get("/api/v1/snapshot")
+def get_snapshot_default():
+    if not _engines:
+        raise HTTPException(503, "No cameras available")
+    first_cam = list(_engines.keys())[0]
+    return get_snapshot(first_cam)
+
+# ---------------------------------------------------------------------------
 # WebSocket Telemetry
 # ---------------------------------------------------------------------------
 @app.websocket("/ws/telemetry")
