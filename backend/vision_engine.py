@@ -40,6 +40,23 @@ _YOLO_WEIGHTS = os.path.join(_PROJECT_ROOT, "yolov8n.pt")
 if not os.path.isfile(_YOLO_WEIGHTS):
     _YOLO_WEIGHTS = "yolov8n.pt"  # fallback: let ultralytics download
 
+_COLORS = [
+    (0, 255, 255),   # Yellow
+    (255, 0, 255),   # Magenta
+    (0, 255, 0),     # Green
+    (255, 128, 0),   # Blue-ish
+    (0, 128, 255),   # Orange
+    (255, 0, 0),     # Blue
+    (0, 0, 255),     # Red
+    (255, 153, 204), # Pink
+    (153, 255, 51),  # Lime
+    (204, 153, 255), # Purple
+]
+
+def get_color(cls_id: int):
+    return _COLORS[cls_id % len(_COLORS)]
+
+
 class _TrackedTarget:
     __slots__ = ("id", "cx", "cy", "bbox", "cls", "breach_counters")
 
@@ -136,8 +153,17 @@ class VirtualFenceEngine:
                 # Draw Box
                 label_name = model.names.get(cls, f"CLS-{cls}")
                 label_text = f"ID-{track_id} {label_name}"
-                cv2.rectangle(annotated, (x, y), (x + w, y + h), (255, 255, 0), 2)
-                cv2.putText(annotated, label_text, (x, y - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 0), 1)
+                color = get_color(int(cls))
+                
+                # Rectangle for object
+                cv2.rectangle(annotated, (x, y), (x + w, y + h), color, 3)
+                
+                # Text Background
+                (tw, th), _ = cv2.getTextSize(label_text, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
+                cv2.rectangle(annotated, (x, max(0, y - th - 10)), (x + tw + 4, y), color, -1)
+                
+                # Text Label (Black text on colored background for visibility)
+                cv2.putText(annotated, label_text, (x + 2, y - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
                 
                 target_list.append({"id": int(track_id), "cx": cx, "cy": cy, "bbox": [x, y, w, h], "label": label_name})
                 
