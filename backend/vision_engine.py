@@ -34,11 +34,11 @@ os.makedirs(VIDEO_DIR, exist_ok=True)
 
 # Removed TARGET_CLASSES filter to track all 80 COCO classes
 
-# Path to YOLO model weights
+# Path to YOLO model weights (upgraded to 'small' model for better detection accuracy)
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_YOLO_WEIGHTS = os.path.join(_PROJECT_ROOT, "yolov8n.pt")
+_YOLO_WEIGHTS = os.path.join(_PROJECT_ROOT, "yolov8s.pt")
 if not os.path.isfile(_YOLO_WEIGHTS):
-    _YOLO_WEIGHTS = "yolov8n.pt"  # fallback: let ultralytics download
+    _YOLO_WEIGHTS = "yolov8s.pt"  # fallback: let ultralytics download
 
 _COLORS = [
     (0, 255, 255),   # Yellow

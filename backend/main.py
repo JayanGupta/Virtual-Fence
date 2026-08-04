@@ -33,6 +33,7 @@ _video_captures: Dict[int, object] = {}
 _processing_threads: List[threading.Thread] = []
 _shutdown_event = threading.Event()
 _ws_clients: List[WebSocket] = []
+_active_camera_index: int = 0  # Global state to track which camera is currently active
 
 # Camera management
 _available_cameras: List[dict] = []
@@ -100,6 +101,11 @@ def _vision_loop(camera_index: int, camera_name: str) -> None:
         
         # Performance optimization: Process 1 in every 3 frames (approx 10 FPS from 30 FPS source)
         if frame_count % 3 != 0:
+            continue
+            
+        global _active_camera_index
+        if camera_index != _active_camera_index:
+            # Skip heavy YOLO inference for background cameras to drastically save CPU
             continue
             
         vision_engine.process_frame(frame)
@@ -327,6 +333,10 @@ def _mjpeg_generator(camera_index: int):
 def video_feed(camera_index: int):
     if camera_index not in _engines:
         raise HTTPException(404, "Camera not found")
+        
+    global _active_camera_index
+    _active_camera_index = camera_index
+    
     return StreamingResponse(
         _mjpeg_generator(camera_index),
         media_type="multipart/x-mixed-replace; boundary=frame",
