@@ -81,6 +81,7 @@ def _vision_loop(camera_index: int, camera_name: str) -> None:
     _engines[camera_index] = vision_engine
 
     failed_reads = 0
+    frame_count = 0
     while not _shutdown_event.is_set():
         ret, frame = cap.read()
         if not ret or frame is None or frame.size == 0:
@@ -95,6 +96,12 @@ def _vision_loop(camera_index: int, camera_name: str) -> None:
             continue
             
         failed_reads = 0
+        frame_count += 1
+        
+        # Performance optimization: Process 1 in every 3 frames (approx 10 FPS from 30 FPS source)
+        if frame_count % 3 != 0:
+            continue
+            
         vision_engine.process_frame(frame)
 
     cap.release()
