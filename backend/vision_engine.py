@@ -68,6 +68,8 @@ class _TrackedTarget:
         self.cls = cls
         self.breach_counters: Dict[str, int] = {}
 
+_model_init_lock = threading.Lock()
+
 class VirtualFenceEngine:
     def __init__(self, camera_index: int, camera_name: str) -> None:
         self.camera_index = camera_index
@@ -84,8 +86,11 @@ class VirtualFenceEngine:
             "camera_name": camera_name,
         }
         
-        # Each engine gets its own YOLO model so tracker state is isolated per camera
-        self._model = YOLO(_YOLO_WEIGHTS)
+        # Each engine gets its own YOLO model so tracker state is isolated per camera.
+        # Use a lock to prevent concurrent downloads if the model weights file doesn't exist yet.
+        with _model_init_lock:
+            self._model = YOLO(_YOLO_WEIGHTS)
+            
         print(f"[Virtual Fence] YOLO model loaded for {camera_name} (camera {camera_index})")
         
         # Rolling buffer for video
