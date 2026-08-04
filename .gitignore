@@ -1,0 +1,28 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+*.db
+
+# Node / Frontend
+frontend/node_modules/
+frontend/out/
+frontend/.next/
+
+# Storage (snapshots are runtime artifacts)
+backend/storage/snapshots/*.jpg
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
