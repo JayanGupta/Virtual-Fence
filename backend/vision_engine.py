@@ -127,7 +127,8 @@ class VirtualFenceEngine:
         model = self._model
         
         # Run YOLO tracking (tracking all classes)
-        results = model.track(frame, persist=True, conf=0.3, verbose=False)
+        # We use bytetrack.yaml because BoT-SORT can fail with "not enough matching points" and drop targets.
+        results = model.track(frame, persist=True, conf=0.3, tracker="bytetrack.yaml", verbose=False)
         
         current_target_ids = set()
         target_list = []
