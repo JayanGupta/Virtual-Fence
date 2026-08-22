@@ -4,7 +4,7 @@ Business logic for security zone CRUD operations.
 """
 
 import json
-from typing import List, Optional
+from typing import List, Optional, Callable
 
 from sqlalchemy.orm import Session
 
@@ -33,7 +33,7 @@ def create_zone(
     name: str,
     zone_type: str,
     points: list,
-    engine_reload_callback: Optional[callable] = None,
+    engine_reload_callback: Optional[Callable] = None,
 ) -> ZoneModel:
     """Create a new security zone and notify vision engines."""
     # Validate polygon has at least 3 points
@@ -68,7 +68,7 @@ def create_zone(
 def delete_zone(
     db: Session,
     zone_id: str,
-    engine_reload_callback: Optional[callable] = None,
+    engine_reload_callback: Optional[Callable] = None,
 ) -> None:
     """Delete a security zone by ID."""
     zone = get_zone(db, zone_id)

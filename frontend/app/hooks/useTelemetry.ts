@@ -32,8 +32,8 @@ export function useTelemetry() {
           const data: TelemetryData = JSON.parse(event.data);
           setTelemetry(data);
           if (data.alerts && data.alerts.length > 0) {
-            setAlerts((prev) => [...data.alerts!, ...prev]);
-            setIncidentCount((prev) => prev + data.alerts!.length);
+            setAlerts((prev: any[]) => [...data.alerts!, ...prev]);
+            setIncidentCount((prev: number) => prev + data.alerts!.length);
           }
         } catch {
           // ignore invalid json

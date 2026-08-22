@@ -38,9 +38,9 @@ export default function SecurityConsole() {
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if (systemCameras.length <= 1) return;
     if (e.key === 'ArrowRight') {
-      setCurrentCameraIdx((prev) => (prev + 1) % systemCameras.length);
+      setCurrentCameraIdx((prev: number) => (prev + 1) % systemCameras.length);
     } else if (e.key === 'ArrowLeft') {
-      setCurrentCameraIdx((prev) => (prev - 1 + systemCameras.length) % systemCameras.length);
+      setCurrentCameraIdx((prev: number) => (prev - 1 + systemCameras.length) % systemCameras.length);
     }
   }, [systemCameras.length]);
 
@@ -51,13 +51,13 @@ export default function SecurityConsole() {
 
   const cycleNext = () => {
     if (systemCameras.length > 0) {
-      setCurrentCameraIdx((prev) => (prev + 1) % systemCameras.length);
+      setCurrentCameraIdx((prev: number) => (prev + 1) % systemCameras.length);
     }
   };
 
   const cyclePrev = () => {
     if (systemCameras.length > 0) {
-      setCurrentCameraIdx((prev) => (prev - 1 + systemCameras.length) % systemCameras.length);
+      setCurrentCameraIdx((prev: number) => (prev - 1 + systemCameras.length) % systemCameras.length);
     }
   };
 
