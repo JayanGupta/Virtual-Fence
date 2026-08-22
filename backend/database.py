@@ -1,25 +1,27 @@
 """
 Virtual Fence — Database Configuration
-SQLAlchemy engine, session factory, and declarative base for SQLite persistence.
+SQLAlchemy engine, session factory, and declarative base.
+Supports config-driven database URL and connection pooling.
 """
 
-import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 
-# ---------------------------------------------------------------------------
-# Database path — stored alongside backend in the storage directory
-# ---------------------------------------------------------------------------
-_STORAGE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "storage")
-os.makedirs(_STORAGE_DIR, exist_ok=True)
+from backend.config import get_settings
 
-DATABASE_URL = f"sqlite:///{os.path.join(_STORAGE_DIR, 'virtual_fence.db')}"
 
-engine = create_engine(
-    DATABASE_URL,
-    connect_args={"check_same_thread": False},  # Required for SQLite + threads
-    echo=False,
-)
+def _create_engine():
+    """Create the SQLAlchemy engine from application settings."""
+    settings = get_settings()
+    return create_engine(
+        settings.DATABASE_URL,
+        connect_args={"check_same_thread": False},  # Required for SQLite + threads
+        pool_pre_ping=True,
+        echo=False,
+    )
+
+
+engine = _create_engine()
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

@@ -1,12 +1,26 @@
 # Virtual Fence (Enterprise Spatial Boundary System)
 
+[![CI](https://github.com/VirtualFenceTeam/virtual-fence/actions/workflows/ci.yml/badge.svg)](https://github.com/VirtualFenceTeam/virtual-fence/actions)
+[![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/downloads/release/python-3110/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 An enterprise-ready spatial perimeter security platform that processes real-time camera streams to monitor user-defined coordinate boundaries, track movement vectors, and instantly log security breaches.
 
 ![Virtual Fence Demo](demo.gif)
 
+## Features
+
+- **Real-time Object Detection**: YOLOv8-powered detection with sub-50ms inference.
+- **Multi-Camera Orchestration**: Monitor multiple feeds simultaneously with independent thread processing.
+- **Spatial Boundary Definitions**: Draw polygonal intrusion zones over camera feeds.
+- **Automated Incident Recording**: Rolling buffer automatically saves 10-second MP4 clips of breaches.
+- **RESTful API & WebSocket Telemetry**: Integration-ready endpoints for enterprise SOC dashboards.
+
+---
+
 ## Architectural Overview
 
-The entire platform runs as a single-process architecture, delivering high performance and simple deployment.
+The platform uses a unified single-service architecture for ease of deployment, combining FastAPI, SQLite, and a Next.js Static Export.
 
 ```mermaid
 graph TD
@@ -16,31 +30,81 @@ graph TD
     Engine <-->|Read Frames| Camera[Camera / Synthetic Video Source]
 ```
 
-### 1. The Computer Vision Pipeline (`backend/vision_engine.py`)
-This engine utilizes a state-of-the-art **YOLOv8** model to detect, classify, and track objects in real-time.
+## Quick Start (Local Development)
 
-* **Object Detection**: Powered by **YOLOv8** (`ultralytics`). It dynamically detects and classifies objects, specifically filtering for humans and vehicles to eliminate false positives.
-* **Multi-Camera Processing**: The backend seamlessly spins up a dedicated background thread and YOLO vision engine instance for *every* camera detected on the system simultaneously.
-* **Vector Tracking**: Associates targets across successive frames using YOLO's built-in tracker.
-* **Intrusion Testing**: Normalized custom polygonal vertices drawn on the UI are denormalized to absolute resolution coordinates. Target centroids are evaluated against these coordinates using a ray-casting **Point-in-Polygon test** (`cv2.pointPolygonTest`).
-* **Video Clip Recording**: When a breach is detected, the engine flags a 150-frame (5-second) rolling buffer, continues recording for an additional 5 seconds, and then encodes a 10-second `MP4` video clip of the entire incident using `cv2.VideoWriter`.
+### Prerequisites
+- Python 3.11+
+- Node.js 20+
 
-### 2. Backend Server (`backend/main.py`)
-- **FastAPI**: Manages async non-blocking execution. Runs the OpenCV video loops in daemon threads.
-- **WebSocket Telemetry**: Telemetry payloads detailing coordinate states and target counts are broadcast at 10Hz to all active console connections.
-- **SPA Mounting**: In production, FastAPI mounts static SPA assets compiled from Next.js, serving client-side routing catchalls, snapshots, videos, and REST APIs from `http://localhost:8000`.
-
-### 3. Frontend Web Console (`frontend/`)
-- Built with **Next.js 14 (App Router)** and **TypeScript**, configured with static export output.
-- Features a **Responsive Multi-Camera Grid Layout** allowing users to monitor all live camera feeds simultaneously.
-- Incident Drawer embeds an HTML5 `<video>` player to review 10-second incident recordings instantly.
-
----
-
-## Local Development Startup
-
-Simply run the batch script in the root directory:
+### Windows Startup
+Run the automated batch script:
 ```cmd
 start.bat
 ```
-*This script will verify your Python and Node.js versions, create an isolated virtual environment (`venv`), install requirements, compile the frontend static files, and launch the server automatically.*
+*This script verifies dependencies, creates a virtual environment, builds the Next.js frontend, and launches the unified FastAPI server.*
+
+### Manual Startup (Linux/macOS)
+```bash
+# 1. Setup Backend
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+
+# 2. Build Frontend
+cd frontend
+npm ci
+npm run build
+cd ..
+
+# 3. Launch Server
+uvicorn backend.main:app --host 0.0.0.0 --port 8000
+```
+
+---
+
+## Deployment (Docker)
+
+Virtual Fence is containerized for production deployment.
+
+```bash
+# Build the image
+docker build -t virtual-fence:latest .
+
+# Run the container
+docker run -d \
+  -p 8000:8000 \
+  -v virtual_fence_data:/app/backend/storage \
+  --name virtual-fence \
+  virtual-fence:latest
+```
+
+*Note: For camera passthrough on Linux, you may need to map devices (e.g., `--device /dev/video0`).*
+
+---
+
+## Configuration
+
+Configuration is managed via environment variables. Create a `.env` file in the root directory:
+
+```env
+LOG_LEVEL=INFO
+CORS_ORIGINS=["http://localhost:8000"]
+FRAME_WIDTH=640
+FRAME_HEIGHT=480
+BREACH_THRESHOLD=5
+```
+See `.env.example` for all configurable options.
+
+---
+
+## Documentation
+
+Once the server is running, interactive API documentation is available at:
+- **Swagger UI**: `http://localhost:8000/docs`
+- **ReDoc**: `http://localhost:8000/redoc`
+
+## Contributing
+Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to contribute to this project.
+
+## License
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

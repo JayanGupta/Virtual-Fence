@@ -1,13 +1,14 @@
 """
 Virtual Fence — Computer Vision Engine (YOLOv8 + Multi-Camera)
+Detects, classifies, and tracks objects in real-time using YOLOv8.
 """
 
+import collections
 import json
 import os
 import threading
 import time
 import uuid
-import collections
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
@@ -15,30 +16,23 @@ import cv2
 import numpy as np
 from ultralytics import YOLO
 
-import logging
-logging.getLogger("ultralytics").setLevel(logging.ERROR)
-
+from backend.config import get_settings
 from backend.database import SessionLocal
+from backend.logging_config import get_logger
 from backend.models import ZoneModel, IncidentModel
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-FRAME_W, FRAME_H = 640, 480
-BREACH_THRESHOLD = 5
-BUFFER_SIZE = 150  # 5 seconds at 30 fps
-SNAPSHOT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "storage", "snapshots")
-VIDEO_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "storage", "videos")
-os.makedirs(SNAPSHOT_DIR, exist_ok=True)
-os.makedirs(VIDEO_DIR, exist_ok=True)
+logger = get_logger("vision_engine")
 
-# Removed TARGET_CLASSES filter to track all 80 COCO classes
-
-# Path to YOLO model weights (upgraded to 'small' model for better detection accuracy)
-_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_YOLO_WEIGHTS = os.path.join(_PROJECT_ROOT, "yolov8s.pt")
-if not os.path.isfile(_YOLO_WEIGHTS):
-    _YOLO_WEIGHTS = "yolov8s.pt"  # fallback: let ultralytics download
+# ---------------------------------------------------------------------------
+# Constants (derived from settings at module load)
+# ---------------------------------------------------------------------------
+_settings = get_settings()
+FRAME_W = _settings.FRAME_WIDTH
+FRAME_H = _settings.FRAME_HEIGHT
+BREACH_THRESHOLD = _settings.BREACH_THRESHOLD
+BUFFER_SIZE = _settings.FRAME_BUFFER_SIZE
+SNAPSHOT_DIR = _settings.SNAPSHOTS_DIR
+VIDEO_DIR = _settings.VIDEOS_DIR
 
 _COLORS = [
     (0, 255, 255),   # Yellow
@@ -53,7 +47,8 @@ _COLORS = [
     (204, 153, 255), # Purple
 ]
 
-def get_color(cls_id: int):
+
+def get_color(cls_id: int) -> Tuple[int, int, int]:
     return _COLORS[cls_id % len(_COLORS)]
 
 
@@ -68,9 +63,13 @@ class _TrackedTarget:
         self.cls = cls
         self.breach_counters: Dict[str, int] = {}
 
+
 _model_init_lock = threading.Lock()
 
+
 class VirtualFenceEngine:
+    """Per-camera vision processing engine with YOLO inference and zone breach detection."""
+
     def __init__(self, camera_index: int, camera_name: str) -> None:
         self.camera_index = camera_index
         self.camera_name = camera_name
@@ -85,15 +84,15 @@ class VirtualFenceEngine:
             "camera_index": camera_index,
             "camera_name": camera_name,
         }
-        
+
         # Each engine gets its own YOLO model so tracker state is isolated per camera.
         # Use a lock to prevent concurrent downloads if the model weights file doesn't exist yet.
         with _model_init_lock:
-            self._model = YOLO(_YOLO_WEIGHTS)
-            
-        print(f"[Virtual Fence] YOLO model loaded for {camera_name} (camera {camera_index})")
-        
-        # Rolling buffer for video
+            self._model = YOLO(_settings.YOLO_MODEL)
+
+        logger.info("YOLO model loaded for %s (camera %d)", camera_name, camera_index)
+
+        # Rolling buffer for video recording
         self._frame_buffer = collections.deque(maxlen=BUFFER_SIZE)
         self._recording = False
         self._recording_frames_left = 0
@@ -101,7 +100,11 @@ class VirtualFenceEngine:
         self._recording_zone = None
         self._recording_buffer = []
 
+        # Performance metrics
+        self._inference_times: collections.deque = collections.deque(maxlen=30)
+
     def reload_zones(self) -> None:
+        """Reload active zone definitions from the database."""
         db = SessionLocal()
         try:
             rows = db.query(ZoneModel).filter(ZoneModel.is_active == True).all()
@@ -114,37 +117,46 @@ class VirtualFenceEngine:
                 )
                 loaded.append({"id": z.id, "name": z.name, "contour_pts": abs_pts})
             self._zones = loaded
+            logger.debug("Reloaded %d active zone(s) for %s", len(loaded), self.camera_name)
         finally:
             db.close()
 
     def process_frame(self, frame: np.ndarray) -> np.ndarray:
+        """Process a single frame: detect, track, check zones, annotate, encode."""
+        t_start = time.perf_counter()
+
         frame = cv2.resize(frame, (FRAME_W, FRAME_H))
         annotated = frame.copy()
-        
+
         # Save to rolling buffer (unannotated)
         self._frame_buffer.append(frame.copy())
-        
+
         model = self._model
-        
-        # Run YOLO tracking (tracking all classes)
-        # We use bytetrack.yaml because BoT-SORT can fail with "not enough matching points" and drop targets.
-        results = model.track(frame, persist=True, conf=0.3, tracker="bytetrack.yaml", verbose=False)
-        
+
+        # Run YOLO tracking (all 80 COCO classes)
+        results = model.track(
+            frame,
+            persist=True,
+            conf=_settings.YOLO_CONFIDENCE,
+            tracker=_settings.YOLO_TRACKER,
+            verbose=False,
+        )
+
         current_target_ids = set()
         target_list = []
         breach_active = False
-        
+
         if len(results) > 0 and results[0].boxes is not None and results[0].boxes.id is not None:
             boxes = results[0].boxes.xywh.cpu().numpy()
             track_ids = results[0].boxes.id.cpu().numpy().astype(int)
             classes = results[0].boxes.cls.cpu().numpy().astype(int)
-            
+
             for box, track_id, cls in zip(boxes, track_ids, classes):
                 cx, cy, w, h = box
                 cx, cy, w, h = int(cx), int(cy), int(w), int(h)
                 x = int(cx - w / 2)
                 y = int(cy - h / 2)
-                
+
                 if track_id not in self._targets:
                     self._targets[track_id] = _TrackedTarget(track_id, cx, cy, (x, y, w, h), cls)
                 else:
@@ -152,28 +164,33 @@ class VirtualFenceEngine:
                     t.cx = cx
                     t.cy = cy
                     t.bbox = (x, y, w, h)
-                
+
                 current_target_ids.add(track_id)
                 t = self._targets[track_id]
-                
-                # Draw Box
+
+                # Draw bounding box
                 label_name = model.names.get(cls, f"CLS-{cls}")
                 label_text = f"ID-{track_id} {label_name}"
                 color = get_color(int(cls))
-                
-                # Rectangle for object
+
                 cv2.rectangle(annotated, (x, y), (x + w, y + h), color, 3)
-                
-                # Text Background
-                (tw, th), _ = cv2.getTextSize(label_text, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
-                cv2.rectangle(annotated, (x, max(0, y - th - 10)), (x + tw + 4, y), color, -1)
-                
-                # Text Label (Black text on colored background for visibility)
+
+                # Text background
+                (tw, th_text), _ = cv2.getTextSize(label_text, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
+                cv2.rectangle(annotated, (x, max(0, y - th_text - 10)), (x + tw + 4, y), color, -1)
+
+                # Text label (black on colored background)
                 cv2.putText(annotated, label_text, (x + 2, y - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
-                
-                target_list.append({"id": int(track_id), "cx": cx, "cy": cy, "bbox": [x, y, w, h], "label": label_name})
-                
-                # Check Zones
+
+                target_list.append({
+                    "id": int(track_id),
+                    "cx": cx,
+                    "cy": cy,
+                    "bbox": [x, y, w, h],
+                    "label": label_name,
+                })
+
+                # Check zones for breach
                 for zone in self._zones:
                     inside = cv2.pointPolygonTest(zone["contour_pts"], (float(cx), float(cy)), False)
                     zid = zone["id"]
@@ -197,13 +214,21 @@ class VirtualFenceEngine:
             cv2.polylines(annotated, [zone["contour_pts"]], True, (0, 0, 255), 2)
             if len(zone["contour_pts"]) > 0:
                 label_pt = tuple(zone["contour_pts"][0])
-                cv2.putText(annotated, zone["name"], (label_pt[0], label_pt[1] - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+                cv2.putText(
+                    annotated, zone["name"],
+                    (label_pt[0], label_pt[1] - 8),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1,
+                )
 
         # HUD
         state_text = "!! BREACH DETECTED !!" if breach_active else "SECURE"
         state_color = (0, 0, 255) if breach_active else (0, 255, 0)
-        cv2.putText(annotated, f"[{self.camera_name}] {state_text}", (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.7, state_color, 2)
-        
+        cv2.putText(
+            annotated, f"[{self.camera_name}] {state_text}",
+            (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.7, state_color, 2,
+        )
+
+        # Update telemetry
         self.telemetry = {
             "active_targets": len(self._targets),
             "state": "BREACH" if breach_active else "SECURE",
@@ -213,8 +238,12 @@ class VirtualFenceEngine:
         }
 
         # Encode JPEG
-        _, buf = cv2.imencode(".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, 75])
+        _, buf = cv2.imencode(".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, _settings.JPEG_QUALITY])
         self.latest_jpeg = buf.tobytes()
+
+        # Track inference time
+        elapsed_ms = (time.perf_counter() - t_start) * 1000
+        self._inference_times.append(elapsed_ms)
 
         # Handle recording state
         if self._recording:
@@ -222,14 +251,25 @@ class VirtualFenceEngine:
             self._recording_frames_left -= 1
             if self._recording_frames_left <= 0:
                 self._recording = False
-                # Save video asynchronously
                 frames_to_save = list(self._recording_buffer)
                 incident_id = self._recording_incident_id
-                threading.Thread(target=self._save_video, args=(frames_to_save, incident_id)).start()
+                threading.Thread(
+                    target=self._save_video,
+                    args=(frames_to_save, incident_id),
+                    daemon=True,
+                ).start()
 
         return annotated
 
+    @property
+    def avg_inference_ms(self) -> float:
+        """Average inference time over the last 30 frames."""
+        if not self._inference_times:
+            return 0.0
+        return sum(self._inference_times) / len(self._inference_times)
+
     def _trigger_breach(self, target: _TrackedTarget, zone: dict, annotated_frame: np.ndarray) -> None:
+        """Record a breach event: snapshot, start video recording, persist to DB."""
         incident_id = str(uuid.uuid4())
         filename = f"{incident_id}.jpg"
         filepath = os.path.join(SNAPSHOT_DIR, filename)
@@ -244,10 +284,9 @@ class VirtualFenceEngine:
         self._recording_frames_left = BUFFER_SIZE
         self._recording_incident_id = incident_id
         self._recording_zone = zone
-        # copy past frames
         self._recording_buffer = list(self._frame_buffer)
 
-        # Initial DB record
+        # Persist to database
         now = datetime.now(timezone.utc)
         db = SessionLocal()
         try:
@@ -259,6 +298,7 @@ class VirtualFenceEngine:
                 snapshot_path=f"/snapshots/{filename}",
                 video_path=None,
                 status="UNREAD",
+                severity="HIGH",
             )
             db.add(record)
             db.commit()
@@ -279,28 +319,37 @@ class VirtualFenceEngine:
         }
         self.pending_events.append(event)
 
-    def _save_video(self, frames: List[np.ndarray], incident_id: str):
+        logger.warning(
+            "BREACH DETECTED — Zone '%s', Target ID-%d, Camera %s",
+            zone["name"], target.id, self.camera_name,
+        )
+
+    def _save_video(self, frames: List[np.ndarray], incident_id: str) -> None:
+        """Encode and save breach video clip (runs in background thread)."""
         video_filename = f"{incident_id}.mp4"
         video_path = os.path.join(VIDEO_DIR, video_filename)
-        
-        # Use mp4v codec
+
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         out = cv2.VideoWriter(video_path, fourcc, 30.0, (FRAME_W, FRAME_H))
         for f in frames:
             out.write(f)
         out.release()
-        
-        # Update DB
+
+        # Update DB with video path
         db = SessionLocal()
         try:
             incident = db.query(IncidentModel).filter(IncidentModel.id == incident_id).first()
             if incident:
                 incident.video_path = f"/videos/{video_filename}"
                 db.commit()
+                logger.info("Breach video saved: %s (%d frames)", video_filename, len(frames))
         finally:
             db.close()
 
+
 class SyntheticVideoSource:
+    """Generates a synthetic video feed with a bouncing figure for testing."""
+
     def __init__(self) -> None:
         self._frame_idx = 0
         self._dot_x = 100.0
