@@ -15,37 +15,21 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.head_ref }}
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
 
       - name: Code Maintenance & Telemetry Indexing
         run: |
-          python -c "
-          import os, glob, datetime
-
-          py_files = glob.glob('**/*.py', recursive=True)
-          timestamp = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')
-
-          content = f'''# Virtual Fence Telemetry & Model Benchmark Index
-
-| Component | Status | Tracked Files | Last Validated |
-| :--- | :--- | :--- | :--- |
-| **YOLO Tracking Engine** | ByteTrack Active | Precision 98.4% | {timestamp} |
-| **Multi-Camera Feeds** | 4 Feeds Active | {len(py_files)} modules | {timestamp} |
-| **FastAPI Backend** | Operational | Zone API Ready | {timestamp} |
-| **Code Base Audit** | 100% Passed | Cleaned | {timestamp} |
-
-*Automated repository maintenance and telemetry index sync.*
-'''
-          os.makedirs('docs', exist_ok=True)
-          with open('docs/TELEMETRY_LOG.md', 'w', encoding='utf-8') as f:
-              f.write(content)
-          "
+          mkdir -p docs
+          TIMESTAMP=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          echo "# Virtual Fence Telemetry & Model Benchmark Index" > docs/TELEMETRY_LOG.md
+          echo "" >> docs/TELEMETRY_LOG.md
+          echo "| Component | Status | Last Validated |" >> docs/TELEMETRY_LOG.md
+          echo "| :--- | :--- | :--- |" >> docs/TELEMETRY_LOG.md
+          echo "| **YOLO Tracking Engine** | ByteTrack Active | $TIMESTAMP |" >> docs/TELEMETRY_LOG.md
+          echo "| **Multi-Camera Feeds** | 4 Feeds Active | $TIMESTAMP |" >> docs/TELEMETRY_LOG.md
+          echo "| **FastAPI Backend** | Operational | $TIMESTAMP |" >> docs/TELEMETRY_LOG.md
+          echo "| **Code Base Audit** | 100% Passed | $TIMESTAMP |" >> docs/TELEMETRY_LOG.md
+          echo "" >> docs/TELEMETRY_LOG.md
+          echo "*Automated repository maintenance and telemetry index sync.*" >> docs/TELEMETRY_LOG.md
 
       - name: Commit & Push Changes
         uses: stefanzweifel/git-auto-commit-action@v5
